@@ -10,6 +10,14 @@ Run the file directly to test the class functionality.
 import math
 import numpy as np
 
+
+class PvtPoint:
+    def __init__(self, position: float, velocity: float, time: float):
+        self.position = position
+        self.velocity = velocity
+        self.time = time
+
+
 class ZeroVibrationTrajectoryGenerator:
     """A class for implementing zero vibration input shaping theory."""
 
@@ -134,7 +142,7 @@ class ZeroVibrationTrajectoryGenerator:
 
     def shape_trapezoidal_motion(
         self, distance: float, acceleration: float, deceleration: float, max_speed_limit: float
-    ) -> list[list[float]]:
+    ) -> list[PvtPoint]:
         """
         Create pvt points for zero vibration.
 
@@ -177,14 +185,14 @@ class ZeroVibrationTrajectoryGenerator:
         trajectory_acceleration[:, 0] = accel_changes[:, 0]  # Time
         trajectory_acceleration[:, 1] = np.cumsum(accel_changes[:, 1])  # Acceleration
 
+        pvt_trajectory = []
         # trajectory is one row less since first row would be initial position (zeros)
-        pvt_trajectory = np.zeros([trajectory_acceleration.shape[0] - 1, 3])
-        for n in range(0, len(pvt_trajectory)):
+        for n in range(0, len(trajectory_acceleration)-1):
             # Calculate position and velocity at each point using equations for constant acceleration since acceleration
             # changes are steps.
             if n > 0:
-                prev_x = pvt_trajectory[n - 1, 0]
-                prev_v = pvt_trajectory[n - 1, 1]
+                prev_x = pvt_trajectory[n - 1].position
+                prev_v = pvt_trajectory[n - 1].velocity
             else:
                 prev_x = 0
                 prev_v = 0
@@ -192,15 +200,18 @@ class ZeroVibrationTrajectoryGenerator:
             # dt[n] = t[n] - t[n-1]
             # v[n] = v[n-1] + a[n] * dt[n]
             # p[n] = x[n-1] + (v[n] + v[n-1])/2 * dt[n]
-            pvt_trajectory[n, 2] = trajectory_acceleration[n + 1, 0] - trajectory_acceleration[n, 0]  # dt
-            pvt_trajectory[n, 1] = prev_v + trajectory_acceleration[n, 1] * pvt_trajectory[n, 2]  # velocity
-            pvt_trajectory[n, 0] = prev_x + (pvt_trajectory[n, 1] + prev_v) / 2 * pvt_trajectory[n, 2]  # position
+            dt = trajectory_acceleration[n + 1, 0] - trajectory_acceleration[n, 0]  # dt
+            current_velocity = prev_v + trajectory_acceleration[n, 1] * dt  # velocity
+            current_position = prev_x + (current_velocity + prev_v) / 2 * dt  # position
+
+            pvt_trajectory.append(PvtPoint(current_position, current_velocity, dt))
 
         # make sure end point velocity is 0 and position is exactly on target
-        pvt_trajectory[-1, 0] = distance
-        pvt_trajectory[-1, 1] = 0
+        pvt_trajectory[-1].position = distance
+        pvt_trajectory[-1].velocity = 0
 
-        return pvt_trajectory.tolist()
+        return pvt_trajectory
+
 
 # Example code for using the class.
 if __name__ == "__main__":
@@ -213,10 +224,10 @@ if __name__ == "__main__":
     pvt_points = shaper.shape_trapezoidal_motion(DIST, ACCEL, ACCEL, MAX_SPEED)
     print('Position, Velocity, Time')
     for point in pvt_points:
-        print(*point, sep=',')
+        print(point.position, point.velocity, point.time)
 
     print("")
     print(
-        f"Shaped Move: Max Speed: {np.max(np.abs(np.array(pvt_points)[:,1])):.2f}, "
-        f"Total Time: {np.sum(np.array(pvt_points)[:, 2]):.2f}, "
+        f"Shaped Move: Max Speed: {max(np.abs(point.velocity) for point in pvt_points):.2f}, "
+        f"Total Time: {sum((point.time for point in pvt_points)):.2f}, "
     )
