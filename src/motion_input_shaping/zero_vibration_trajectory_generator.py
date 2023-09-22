@@ -141,7 +141,8 @@ class ZeroVibrationTrajectoryGenerator:
                             )
 
     def shape_trapezoidal_motion(
-        self, distance: float, acceleration: float, deceleration: float, max_speed_limit: float
+        self, distance: float, acceleration: float, deceleration: float, max_speed_limit: float,
+        min_pvt_timestep: float = 0.001
     ) -> list[PvtPoint]:
         """
         Create pvt points for zero vibration.
@@ -158,6 +159,7 @@ class ZeroVibrationTrajectoryGenerator:
         :param deceleration: The trajectory deceleration.
         :param max_speed_limit: An optional limit to place on maximum trajectory speed in the
         output motion.
+        :param min_pvt_timestep: Smallest allowable time step that can be used by pvt
         """
         # Get time and magnitude of the impulses used for shaping
         impulse_amplitudes = self.get_impulse_amplitudes()
@@ -186,25 +188,29 @@ class ZeroVibrationTrajectoryGenerator:
         trajectory_acceleration[:, 1] = np.cumsum(accel_changes[:, 1])  # Acceleration
 
         pvt_trajectory = []
-        # trajectory is one row less since first row would be initial position (zeros)
+        # trajectory is one row less than list of accelerations since first row would be initial position (zeros)
+        previous_position = 0
+        previous_velocity = 0
+        timestep = 0
         for n in range(0, len(trajectory_acceleration)-1):
             # Calculate position and velocity at each point using equations for constant acceleration since acceleration
             # changes are steps.
-            if n > 0:
-                prev_x = pvt_trajectory[n - 1].position
-                prev_v = pvt_trajectory[n - 1].velocity
-            else:
-                prev_x = 0
-                prev_v = 0
-
             # dt[n] = t[n] - t[n-1]
             # v[n] = v[n-1] + a[n] * dt[n]
             # p[n] = x[n-1] + (v[n] + v[n-1])/2 * dt[n]
             dt = trajectory_acceleration[n + 1, 0] - trajectory_acceleration[n, 0]  # dt
-            current_velocity = prev_v + trajectory_acceleration[n, 1] * dt  # velocity
-            current_position = prev_x + (current_velocity + prev_v) / 2 * dt  # position
+            current_velocity = previous_velocity + trajectory_acceleration[n, 1] * dt  # velocity
+            current_position = previous_position + (current_velocity + previous_velocity) / 2 * dt  # position
 
-            pvt_trajectory.append(PvtPoint(current_position, current_velocity, dt))
+            timestep += dt
+            # Only write a step if the accumulated timestep duration is larger than minimum allowable timestep
+            if timestep >= min_pvt_timestep:
+                pvt_trajectory.append(PvtPoint(current_position, current_velocity, timestep))
+                timestep = 0  # Reset step time if point is recorded
+
+            # Record current values and previous positions for next step
+            previous_position = current_position
+            previous_velocity = current_velocity
 
         # make sure end point velocity is 0 and position is exactly on target
         pvt_trajectory[-1].position = distance
@@ -217,7 +223,7 @@ class ZeroVibrationTrajectoryGenerator:
 if __name__ == "__main__":
     shaper = ZeroVibrationTrajectoryGenerator(4.64, 0.04)
 
-    DIST = 680
+    DIST = 700
     ACCEL = 2100
     MAX_SPEED = 1000
 
