@@ -9,6 +9,7 @@ Run the file directly to test the class functionality.
 
 import math
 import numpy as np
+from enum import Enum
 
 
 class PvtPoint:
@@ -17,11 +18,16 @@ class PvtPoint:
         self.velocity = velocity
         self.time = time
 
+class ShaperType(Enum):
+    ZV = 1
+    ZVD = 2
+    ZVDD = 3
 
 class ZeroVibrationTrajectoryGenerator:
     """A class for implementing zero vibration input shaping theory."""
 
-    def __init__(self, resonant_frequency: float, damping_ratio: float, min_timestep: float = 0.001) -> None:
+    def __init__(self, resonant_frequency: float, damping_ratio: float, shaper_type: ShaperType = ShaperType.ZV,
+                 min_timestep: float = 0.001) -> None:
         """
         Initialize the class.
 
@@ -31,7 +37,14 @@ class ZeroVibrationTrajectoryGenerator:
         """
         self.resonant_frequency = resonant_frequency
         self.damping_ratio = damping_ratio
+        self.shaper_type = shaper_type
         self.min_timestep = min_timestep
+
+        self._impulses = None
+        self._impulse_times = None
+        self.impulses_updated = False
+        self.update_shaper_impulses()  # Update impulses
+
 
     @property
     def resonant_frequency(self) -> float:
@@ -43,7 +56,7 @@ class ZeroVibrationTrajectoryGenerator:
         """Set the target resonant frequency for input shaping in Hz."""
         if value <= 0:
             raise ValueError(f"Invalid resonant frequency: {value}. Value must be greater than 0.")
-
+        self.impulses_updated = False
         self._resonant_frequency = value
 
     @property
@@ -63,8 +76,19 @@ class ZeroVibrationTrajectoryGenerator:
             raise ValueError(
                 f"Invalid damping ratio: {value}. Value must be greater than or equal to 0."
             )
-
+        self.impulses_updated = False
         self._damping_ratio = value
+
+    @property
+    def shaper_type(self) -> str:
+        """Get input shaper type."""
+        return self._shaper_type
+
+    @shaper_type.setter
+    def shaper_type(self, input: str) -> None:
+        """Set input shaper type."""
+        self.impulses_updated = False
+        self._shaper_type = input
 
     @property
     def min_timestep(self) -> float:
@@ -73,22 +97,59 @@ class ZeroVibrationTrajectoryGenerator:
 
     @min_timestep.setter
     def min_timestep(self, value: float) -> None:
-        """Get the minimum time step for shaped pvt sequence in seconds."""
+        """Set the minimum time step for shaped pvt sequence in seconds."""
         if value <= 0:
             raise ValueError(f"Invalid minimum timestep: {value}. Value must be greater than 0.")
 
         self._min_timestep = value
 
-    def get_impulse_amplitudes(self) -> list[float]:
-        """Get the unitless magnitude of both impulses to perform the input shaping."""
+    def get_impulses(self):
+        if self._impulses is None or self._impulse_times is None or self.impulses_updated is False:
+            self.update_shaper_impulses()
+        return self._impulses
+
+    def get_impulse_times(self):
+        if self._impulses is None or self._impulse_times is None or self.impulses_updated is False:
+            self.update_shaper_impulses()
+        return self._impulse_times
+
+    def update_shaper_impulses(self):
+        """Get times and unitless magnitude of impulses to perform the input shaping."""
         k = math.exp(
-            (-1 * math.pi * self.damping_ratio) / math.sqrt(1 - self.damping_ratio**2)
-        )  # Decay factor at half period
+            (-1 * math.pi * self.damping_ratio) / math.sqrt(1 - self.damping_ratio ** 2)
+        )  # Decay factor
 
-        a1 = 1 / (1 + k)
-        a2 = k / (1 + k)
-
-        return [a1, a2]
+        match self.shaper_type:
+            case ShaperType.ZV:
+                a0 = 1 / (1 + k)
+                a1 = k / (1 + k)
+                t0 = 0
+                t1 = self.resonant_period / 2
+                self._impulses = [a0, a1]
+                self._impulse_times = [t0, t1]
+            case ShaperType.ZVD:
+                a0 = 1 / (1 + 2 * k + k**2)
+                a1 = 2 * k / (1 + 2 * k + k**2)
+                a2 = k**2 / (1 + 2 * k + k ** 2)
+                t0 = 0
+                t1 = self.resonant_period / 2
+                t2 = self.resonant_period
+                self._impulses = [a0, a1, a2]
+                self._impulse_times = [t0, t1, t2]
+            case ShaperType.ZVDD:
+                a0 = 1 / (1 + 3 * k + 3 * k ** 2 + k**3)
+                a1 = 3 * k / (1 + 3 * k + 3 * k ** 2 + k**3)
+                a2 = 3 * k**2 / (1 + 3 * k + 3 * k ** 2 + k**3)
+                a3 = k**3 / (1 + 3 * k + 3 * k ** 2 + k**3)
+                t0 = 0
+                t1 = self.resonant_period / 2
+                t2 = self.resonant_period
+                t3 = self.resonant_period * 3 / 2
+                self._impulses = [a0, a1, a2, a3]
+                self._impulse_times = [t0, t1, t2, t3]
+            case _:
+                raise Exception(f"Shaper type {self.shaper_type} is not valid")
+        self.impulses_updated = True
 
     def basic_trapezoidal_motion_generator(
         self, distance: float, acceleration: float, deceleration: float, max_speed_limit: float):
@@ -162,8 +223,8 @@ class ZeroVibrationTrajectoryGenerator:
         :param min_pvt_timestep: Smallest allowable time step that can be used by pvt
         """
         # Get time and magnitude of the impulses used for shaping
-        impulse_amplitudes = self.get_impulse_amplitudes()
-        impulses = np.array([[0, impulse_amplitudes[0]], [self.resonant_period/2, impulse_amplitudes[1]]])
+        impulses = self.get_impulses()
+        impulse_times = self.get_impulse_times()
 
         basic_trajectory_acceleration = (
             self.basic_trapezoidal_motion_generator(distance, acceleration, deceleration, max_speed_limit))
@@ -175,8 +236,8 @@ class ZeroVibrationTrajectoryGenerator:
         accel_changes = np.zeros([basic_trajectory_acceleration.shape[0] * len(impulses), 2])
         # for each impulse create a copy of the acceleration change delayed and scaled by the impulse time and magnitude
         for n in range(len(impulses)):
-            accel_changes[n*num_rows:(num_rows+n*num_rows), 0] = basic_trajectory_acceleration[:, 0] + impulses[n, 0]
-            accel_changes[n*num_rows:(num_rows+n*num_rows), 1] = basic_accel_changes[:] * impulses[n, 1]
+            accel_changes[n*num_rows:(num_rows+n*num_rows), 0] = basic_trajectory_acceleration[:, 0] + impulse_times[n]
+            accel_changes[n*num_rows:(num_rows+n*num_rows), 1] = basic_accel_changes[:] * impulses[n]
 
         accel_changes = accel_changes[accel_changes[:, 0].argsort()]  # sort acceleration changes by time
 
@@ -223,7 +284,7 @@ class ZeroVibrationTrajectoryGenerator:
 if __name__ == "__main__":
     shaper = ZeroVibrationTrajectoryGenerator(4.64, 0.04)
 
-    DIST = 700
+    DIST = 600
     ACCEL = 2100
     MAX_SPEED = 1000
 
