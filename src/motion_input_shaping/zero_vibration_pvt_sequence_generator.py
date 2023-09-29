@@ -18,12 +18,14 @@ class PvtPoint:
         self.velocity = velocity
         self.time = time
 
+
 class ShaperType(Enum):
     ZV = 1
     ZVD = 2
     ZVDD = 3
 
-class ZeroVibrationTrajectoryGenerator:
+
+class ZeroVibrationPVTSequenceGenerator:
     """A class for implementing zero vibration input shaping theory."""
 
     def __init__(self, resonant_frequency: float, damping_ratio: float, shaper_type: ShaperType = ShaperType.ZV,
@@ -282,7 +284,7 @@ class ZeroVibrationTrajectoryGenerator:
 
 # Example code for using the class.
 if __name__ == "__main__":
-    shaper = ZeroVibrationTrajectoryGenerator(4.64, 0.04)
+    shaper = ZeroVibrationPVTSequenceGenerator(4.64, 0.04)
 
     DIST = 600
     ACCEL = 2100
