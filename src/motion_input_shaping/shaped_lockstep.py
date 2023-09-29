@@ -10,9 +10,11 @@ Run the file directly to test the class out with a Zaber Device.
 import time
 import sys
 import numpy as np
-from zaber_motion import Units
-from zaber_motion.ascii import Connection, Lockstep
+from zaber_motion import Units, Measurement
+from zaber_motion.ascii import Connection, Lockstep, PvtAxisDefinition, PvtAxisType
 from zero_vibration_shaper import ZeroVibrationShaper
+from zero_vibration_pvt_sequence_generator import ZeroVibrationPVTSequenceGenerator, ShaperType
+from shaper_config import *
 
 
 class ShapedLockstep(Lockstep):
@@ -22,7 +24,8 @@ class ShapedLockstep(Lockstep):
     Used for performing moves with input shaping vibration reduction theory.
     """
 
-    def __init__(self, zaber_lockstep: Lockstep, resonant_frequency: float, damping_ratio: float) -> None:
+    def __init__(self, zaber_lockstep: Lockstep, resonant_frequency: float, damping_ratio: float,
+                 shaper_config: ShaperConfig) -> None:
         """
         Initialize the class for the specified lockstep group.
 
@@ -39,7 +42,17 @@ class ShapedLockstep(Lockstep):
             raise TypeError("Invalid Lockstep class was used to initialized ShapedLockstep.")
 
         super().__init__(zaber_lockstep.device, zaber_lockstep.lockstep_group_id)
-        self.shaper = ZeroVibrationShaper(resonant_frequency, damping_ratio)
+        self._shaper_mode = shaper_config.shaper_mode
+
+        match self._shaper_mode:
+            case ShaperMode.DECEL:
+                self.shaper = ZeroVibrationShaper(resonant_frequency, damping_ratio)
+            case ShaperMode.PVT:
+                self.shaper = ZeroVibrationPVTSequenceGenerator(resonant_frequency, damping_ratio,
+                                                                shaper_type=shaper_config.settings.shaper_type)
+                self.pvt = zaber_lockstep.device.get_pvt(shaper_config.settings.pvt_id)
+                self.speed_margin = 1  # Amount of margin in trajectory to prevent exceeding max velocity during the move
+
         self._max_speed_limit = -1.0
 
         # Get axis numbers that are used so that settings can be changed
@@ -159,6 +172,41 @@ class ShapedLockstep(Lockstep):
         acceleration_unit: Units = Units.NATIVE,
     ) -> None:
         """
+        Input-shaped relative move using function for specific shaper mode.
+
+        :param position: The amount to move.
+        :param unit: The units for the position value.
+        :param wait_until_idle: If true the command will hang until the device reaches idle state.
+        :param acceleration: The acceleration for the move.
+        :param acceleration_unit: The units for the acceleration value.
+        """
+        match self._shaper_mode:
+            case ShaperMode.DECEL:
+                self._move_relative_shaped_decel(
+                    position,
+                    unit,
+                    wait_until_idle,
+                    acceleration,
+                    acceleration_unit,
+                    )
+            case ShaperMode.PVT:
+                self._move_relative_shaped_pvt(
+                    position,
+                    unit,
+                    wait_until_idle,
+                    acceleration,
+                    acceleration_unit,
+                )
+
+    def _move_relative_shaped_decel(
+        self,
+        position: float,
+        unit: Units = Units.NATIVE,
+        wait_until_idle: bool = True,
+        acceleration: float = 0,
+        acceleration_unit: Units = Units.NATIVE,
+    ) -> None:
+        """
         Input-shaped relative move for the target resonant frequency and damping ratio.
 
         :param position: The amount to move.
@@ -208,6 +256,59 @@ class ShapedLockstep(Lockstep):
             accel_mm,
             Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED,
         )
+
+    def _move_relative_shaped_pvt(
+        self,
+        position: float,
+        unit: Units = Units.NATIVE,
+        wait_until_idle: bool = True,
+        acceleration: float = 0,
+        acceleration_unit: Units = Units.NATIVE,
+    ) -> None:
+        """
+        Input-shaped relative move for the target resonant frequency and damping ratio.
+
+        :param position: The amount to move.
+        :param unit: The units for the position value.
+        :param wait_until_idle: If true the command will hang until the device reaches idle state.
+        :param acceleration: The acceleration for the move.
+        :param acceleration_unit: The units for the acceleration value.
+        """
+        # Convert all to values to the same units
+        position_native = self.axes[0].settings.convert_to_native_units("pos", position, unit)
+        accel_native = self.axes[0].settings.convert_to_native_units(
+            "accel", acceleration, acceleration_unit
+        )
+
+        if acceleration == 0:  # Get the acceleration if it wasn't specified
+            accel_native = np.min(self.get_setting_from_lockstep_axes("accel", Units.NATIVE))
+
+        position_mm = self.axes[0].settings.convert_from_native_units(
+            "pos", position_native, Units.LENGTH_MILLIMETRES
+        )
+        accel_mm = self.axes[0].settings.convert_from_native_units(
+            "accel", accel_native, Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED
+        )
+
+        start_position = super().get_position(Units.LENGTH_MILLIMETRES)
+
+        path = self.shaper.shape_trapezoidal_motion(
+            position_mm, accel_mm, accel_mm, self.get_max_speed_limit(Units.VELOCITY_MILLIMETRES_PER_SECOND)-self.speed_margin
+        )
+        self.pvt.setup_live_composite(PvtAxisDefinition(self.lockstep_group_id, PvtAxisType.LOCKSTEP))
+        self.pvt.cork()
+        for point in path:
+            self.pvt.point([
+                Measurement(point.position + start_position, Units.LENGTH_MILLIMETRES),  # x
+            ], [
+                Measurement(point.velocity, Units.VELOCITY_MILLIMETRES_PER_SECOND),  # v
+            ], Measurement(point.time, Units.TIME_SECONDS))  # time
+        self.pvt.uncork()
+
+        if wait_until_idle:
+            self.pvt.wait_until_idle()
+
+        self.pvt.disable()
 
     def move_absolute_shaped(
         self,
@@ -298,7 +399,7 @@ if __name__ == "__main__":
             1
         )  # Get the first lockstep group from the device. This will become the ShapedLockstep.
         shaped_lockstep = ShapedLockstep(
-            lockstep, 10, 0.1
+            lockstep, 10, 0.1, ShaperConfig(ShaperMode.DECEL)
         )  # Initialize the ShapedLockstep class with the frequency and damping ratio
 
         if (
