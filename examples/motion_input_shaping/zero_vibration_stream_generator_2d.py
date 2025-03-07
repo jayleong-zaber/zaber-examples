@@ -5,11 +5,11 @@ Run the file directly to test the class functionality.
 """
 
 import math
-from enum import Enum
-from dataclasses import dataclass
 import numpy as np
+from dataclasses import dataclass
 from plant import Plant
-from zero_vibration_stream_generator import ZeroVibrationStreamGenerator, ShaperType, StreamSegment, trapezoidal_motion_generator, calculate_acceleration_convolution, AccelPoint
+from zero_vibration_stream_generator import ZeroVibrationStreamGenerator, ShaperType, StreamSegment, \
+    trapezoidal_motion_generator, calculate_acceleration_convolution, AccelPoint
 
 
 @dataclass
@@ -31,6 +31,7 @@ class AccelPoint2D:
     x_acceleration: float
     y_acceleration: float
 
+
 @dataclass
 class Impulses2D:
     """Combined 2D impulses."""
@@ -39,8 +40,9 @@ class Impulses2D:
     x_impulses: list[float]
     y_impulses: list[float]
 
+
 def create_stream_trajectory_2d(x_trajectory: list[AccelPoint], y_trajectory: list[AccelPoint]
-                             ) -> list[StreamSegment2D]:
+                                ) -> list[StreamSegment2D]:
     """
     Compute information needed to execute trajectory through streams.
 
@@ -56,50 +58,38 @@ def create_stream_trajectory_2d(x_trajectory: list[AccelPoint], y_trajectory: li
 
     stream_segments = []
     # trajectory is one row less than list of accelerations since first row would be the
+    # Calculate 2d trajectory using vectors
     # initial position (zeros)
-    previous_x_position = 0.0
-    previous_x_velocity = 0.0
-    previous_y_position = 0.0
-    previous_y_velocity = 0.0
-    previous_velocity = 0.0
+    previous_position = np.array([0, 0])
+    previous_velocity = np.array([0, 0])
     for n in range(0, len(trajectory_time) - 1):
         # Calculate position and velocity at end of each segment using equations for constant
         # acceleration since acceleration changes are steps.
         dt = trajectory_time[n + 1] - trajectory_time[n]  # dt
 
-        current_x_accel = trajectory_x_acceleration[n]
-        current_x_velocity = previous_x_velocity + trajectory_x_acceleration[n] * dt  # velocity
-        current_x_position = (
-            previous_x_position + (current_x_velocity + previous_x_velocity) / 2 * dt
-        )  # position
-
-        current_y_accel = trajectory_y_acceleration[n]
-        current_y_velocity = previous_y_velocity + trajectory_y_acceleration[n] * dt  # velocity
-        current_y_position = (
-            previous_y_position + (current_y_velocity + previous_y_velocity) / 2 * dt
-        )  # position
-
-        current_velocity = math.sqrt(current_x_velocity ** 2 + current_y_velocity ** 2)
-        current_accel = math.sqrt(current_x_accel ** 2 + current_y_accel ** 2)
+        current_accel = np.array(
+            [trajectory_x_acceleration[n], trajectory_y_acceleration[n]])  # type: np.ndarray
+        current_velocity = previous_velocity + current_accel * dt
+        current_position = previous_position + (current_velocity + previous_velocity) / 2 * dt
 
         stream_segments.append(
             StreamSegment2D(
-                current_x_position,
-                current_y_position,
-                max([abs(current_velocity), abs(previous_velocity)]),
-                abs(current_accel),
+                current_position[0],
+                current_position[1],
+                max([
+                    math.sqrt(current_velocity[0] ** 2 + current_velocity[1] ** 2),
+                    math.sqrt(previous_velocity[0] ** 2 + previous_velocity[1] ** 2)]),
+                math.sqrt(current_accel[0] ** 2 + current_accel[1] ** 2),
                 dt,
             )
         )
 
         # Record current values and previous positions for next step
         previous_velocity = current_velocity
-        previous_x_position = current_x_position
-        previous_x_velocity = current_x_velocity
-        previous_y_position = current_y_position
-        previous_y_velocity = current_y_velocity
+        previous_position = current_position
 
     return stream_segments
+
 
 class ZeroVibrationStreamGenerator2D:
     """A class for creating stream motion with zero vibration input shaping theory."""
@@ -145,7 +135,8 @@ class ZeroVibrationStreamGenerator2D:
         return Impulses2D(x_impulse_times_2d, x_impulses_2d, y_impulses_2d)
 
     def shape_trapezoidal_motion(
-        self, x_distance: float, y_distance: float, acceleration: float, deceleration: float, max_speed_limit: float
+        self, x_distance: float, y_distance: float, acceleration: float, deceleration: float,
+        max_speed_limit: float
     ) -> list[StreamSegment2D]:
         """
         Create stream points for zero vibration trapezoidal motion.
