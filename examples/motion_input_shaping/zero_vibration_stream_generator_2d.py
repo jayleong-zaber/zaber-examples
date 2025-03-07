@@ -156,30 +156,29 @@ class ZeroVibrationStreamGenerator2D:
         # Get time and magnitude of the impulses used for shaping
         impulses = self.get_2D_impulses()
 
-        # Treat accel/decel as tangential acceleration and calculate individual x and y accel
+        # Calculate magnitude of x and y component relative to total
         total_distance = math.sqrt(x_distance ** 2 + y_distance ** 2)
-        x_ratio = x_distance / total_distance
-        y_ratio = y_distance / total_distance
-        x_accel = acceleration * x_ratio
-        y_accel = acceleration * y_ratio
-        x_decel = deceleration * x_ratio
-        y_decel = deceleration * y_ratio
-        x_max_speed = max_speed_limit * x_ratio
-        y_max_speed = max_speed_limit * y_ratio
+        x_ratio = x_distance / total_distance  # cos(theta)
+        y_ratio = y_distance / total_distance  # sin(theta)
 
-        unshaped_x_trajectory = trapezoidal_motion_generator(
-            x_distance,
-            x_accel,
-            x_decel,
-            x_max_speed,
-        )
-        unshaped_y_trajectory = trapezoidal_motion_generator(
-            y_distance,
-            y_accel,
-            y_decel,
-            y_max_speed,
+        # Generate trapezoidal profile for combined move
+        unshaped_trajectory = trapezoidal_motion_generator(
+            total_distance,
+            acceleration,
+            deceleration,
+            max_speed_limit,
         )
 
+        # Split into X and Y components
+        unshaped_x_trajectory = []
+        unshaped_y_trajectory = []
+        for trajectory_point in unshaped_trajectory:
+            unshaped_x_trajectory.append(
+                AccelPoint(trajectory_point.time, trajectory_point.acceleration * x_ratio))
+            unshaped_y_trajectory.append(
+                AccelPoint(trajectory_point.time, trajectory_point.acceleration * y_ratio))
+
+        # Apply shaper
         shaped_x_trajectory = calculate_acceleration_convolution(
             impulses.impulse_times, impulses.x_impulses, unshaped_x_trajectory
         )
@@ -187,6 +186,7 @@ class ZeroVibrationStreamGenerator2D:
             impulses.impulse_times, impulses.y_impulses, unshaped_y_trajectory
         )
 
+        # Create stream segments
         stream_segments = create_stream_trajectory_2d(shaped_x_trajectory, shaped_y_trajectory)
 
         # make sure end point position is exactly on target
@@ -210,7 +210,7 @@ if __name__ == "__main__":
     MAX_SPEED = 1000
 
     trajectory_points = shaper.shape_trapezoidal_motion(X_DIST, Y_DIST, ACCEL, ACCEL, MAX_SPEED)
-    print("Tangential Accel, X Position, YPosition, Max Speed, Time")
+    print("Tangential Accel, X Position, Y Position, Max Speed, Time")
     for point in trajectory_points:
         print(*[point.accel, point.x_position, point.y_position, point.speed_limit, point.duration],
               sep=", ")
