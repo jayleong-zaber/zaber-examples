@@ -32,7 +32,7 @@ class AccelPoint2D:
     y_acceleration: float
 
 @dataclass
-class Impulse2D:
+class Impulses2D:
     """Combined 2D impulses."""
 
     impulse_times: list[float]
@@ -117,26 +117,32 @@ class ZeroVibrationStreamGenerator2D:
         self.x_shaper = ZeroVibrationStreamGenerator(x_plant, shaper_type)
         self.y_shaper = ZeroVibrationStreamGenerator(y_plant, shaper_type)
 
-    def get_2D_impulses(self) -> Impulse2D:
+    def get_impulses_2d(self) -> Impulses2D:
+        """Get impulses for both axes and combine so that they share the same time points."""
         x_impulses = self.x_shaper.get_impulse_amplitudes()
         x_impulse_times = self.x_shaper.get_impulse_times()
         y_impulses = self.y_shaper.get_impulse_amplitudes()
         y_impulse_times = self.y_shaper.get_impulse_times()
 
+        x_impulses_2d = x_impulses
+        x_impulse_times_2d = x_impulse_times
         for t in y_impulse_times:
             if not any(time == t for time in x_impulse_times):
-                x_impulse_times.append(t)
-                x_impulses.append(0)
+                x_impulse_times_2d.append(t)
+                x_impulses_2d.append(0)
 
+        y_impulses_2d = y_impulses
+        y_impulse_times_2d = y_impulse_times
         for t in x_impulse_times:
             if not any(time == t for time in y_impulse_times):
-                y_impulse_times.append(t)
-                y_impulses.append(0)
+                y_impulse_times_2d.append(t)
+                y_impulses_2d.append(0)
 
-        x_impulse_times, x_impulses = zip(*sorted(zip(x_impulse_times, x_impulses)))
-        y_impulse_times, y_impulses = zip(*sorted(zip(y_impulse_times, y_impulses)))
+        # Sort by times
+        x_impulse_times_2d, x_impulses_2d = zip(*sorted(zip(x_impulse_times_2d, x_impulses_2d)))
+        y_impulse_times_2d, y_impulses_2d = zip(*sorted(zip(y_impulse_times_2d, y_impulses_2d)))
 
-        return Impulse2D(x_impulse_times, x_impulses, y_impulses)
+        return Impulses2D(x_impulse_times_2d, x_impulses_2d, y_impulses_2d)
 
     def shape_trapezoidal_motion(
         self, x_distance: float, y_distance: float, acceleration: float, deceleration: float, max_speed_limit: float
@@ -154,7 +160,7 @@ class ZeroVibrationStreamGenerator2D:
         output motion.
         """
         # Get time and magnitude of the impulses used for shaping
-        impulses = self.get_2D_impulses()
+        impulses = self.get_impulses_2d()
 
         # Calculate magnitude of x and y component relative to total
         total_distance = math.sqrt(x_distance ** 2 + y_distance ** 2)
@@ -202,7 +208,7 @@ if __name__ == "__main__":
     y_plant_var = Plant(8, 0.04)
     shaper = ZeroVibrationStreamGenerator2D(x_plant_var, y_plant_var, ShaperType.ZV)
 
-    shaper.get_2D_impulses()
+    shaper.get_impulses_2d()
 
     X_DIST = 600
     Y_DIST = 300
