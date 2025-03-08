@@ -292,11 +292,9 @@ class ShapedAxisStream2D:
             # Set acceleration making sure it is greater than zero by comparing 1 native accel unit
             if (
                 (self._x_primary_axis.settings.convert_to_native_units(
-                    "accel", segment.accel, Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED
-                ) > 1)
+                    "accel", segment.accel, Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED) > 1)
                 & (self._y_primary_axis.settings.convert_to_native_units(
-                "accel", segment.accel, Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED
-            ) > 1)
+                "accel", segment.accel, Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED) > 1)
             ):
                 self.stream.set_max_tangential_acceleration(
                     segment.accel, Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED
@@ -307,11 +305,9 @@ class ShapedAxisStream2D:
             # Set max speed making sure that it is at least 1 native speed unit
             if (
                 (self._x_primary_axis.settings.convert_to_native_units(
-                    "maxspeed", segment.speed_limit, Units.VELOCITY_MILLIMETRES_PER_SECOND
-                ) > 1)
+                    "maxspeed", segment.speed_limit, Units.VELOCITY_MILLIMETRES_PER_SECOND) > 1)
                 & (self._y_primary_axis.settings.convert_to_native_units(
-                "maxspeed", segment.speed_limit, Units.VELOCITY_MILLIMETRES_PER_SECOND
-            ) > 1)
+                "maxspeed", segment.speed_limit, Units.VELOCITY_MILLIMETRES_PER_SECOND) > 1)
             ):
                 self.stream.set_max_speed(
                     segment.speed_limit, Units.VELOCITY_MILLIMETRES_PER_SECOND
