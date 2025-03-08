@@ -274,23 +274,20 @@ class ShapedAxisStream2D:
         )
 
         self.stream.disable()
-        if isinstance(self.x_axis, Lockstep) | isinstance(self.y_axis, Lockstep):
-            if isinstance(self.x_axis, Lockstep):
-                x_axis_definition = StreamAxisDefinition(self.x_axis.lockstep_group_id,
-                                                         StreamAxisType.LOCKSTEP)
-            else:
-                x_axis_definition = StreamAxisDefinition(self.x_axis.axis_number,
-                                                         StreamAxisType.PHYSICAL)
-            if isinstance(self.y_axis, Lockstep):
-                y_axis_definition = StreamAxisDefinition(self.y_axis.lockstep_group_id,
-                                                         StreamAxisType.LOCKSTEP)
-            else:
-                y_axis_definition = StreamAxisDefinition(self.y_axis.axis_number,
-                                                         StreamAxisType.PHYSICAL)
-            self.stream.setup_live_composite(x_axis_definition, y_axis_definition)
+        if isinstance(self.x_axis, Lockstep):
+            x_axis_definition = StreamAxisDefinition(self.x_axis.lockstep_group_id,
+                                                     StreamAxisType.LOCKSTEP)
         else:
-            self.stream.setup_live(self.x_axis.axis_number, self.y_axis.axis_number)
-        self.stream.cork()
+            x_axis_definition = StreamAxisDefinition(self.x_axis.axis_number,
+                                                     StreamAxisType.PHYSICAL)
+        if isinstance(self.y_axis, Lockstep):
+            y_axis_definition = StreamAxisDefinition(self.y_axis.lockstep_group_id,
+                                                     StreamAxisType.LOCKSTEP)
+        else:
+            y_axis_definition = StreamAxisDefinition(self.y_axis.axis_number,
+                                                     StreamAxisType.PHYSICAL)
+        self.stream.setup_live_composite(x_axis_definition, y_axis_definition)
+
         for segment in stream_segments:
             # Set acceleration making sure it is greater than zero by comparing 1 native accel unit
             if (
