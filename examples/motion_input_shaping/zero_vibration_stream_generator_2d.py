@@ -155,6 +155,8 @@ class ZeroVibrationStreamGenerator2D:
 
         # Calculate magnitude of x and y component relative to total
         total_distance = math.sqrt(x_distance ** 2 + y_distance ** 2)
+        if total_distance == 0:
+            return []
         x_ratio = x_distance / total_distance  # cos(theta)
         y_ratio = y_distance / total_distance  # sin(theta)
 
