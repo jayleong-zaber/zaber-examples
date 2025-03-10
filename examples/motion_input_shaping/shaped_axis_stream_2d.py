@@ -6,9 +6,12 @@ Run the file directly to test the class out with a Zaber Device.
 
 # pylint: disable=too-many-arguments
 
+import sys
+import time
+import math
 import numpy as np
-from zaber_motion import Units, Measurement
-from zaber_motion.ascii import Axis, Lockstep, StreamAxisDefinition, StreamAxisType
+from zaber_motion import Units, Measurement, CommandFailedException, LockstepNotEnabledException
+from zaber_motion.ascii import Axis, Lockstep, StreamAxisDefinition, StreamAxisType, Connection
 from zero_vibration_stream_generator import ShaperType
 from zero_vibration_stream_generator_2d import ZeroVibrationStreamGenerator2D
 from plant import Plant
@@ -80,12 +83,13 @@ class ShapedAxisStream2D:
         self.shaper = ZeroVibrationStreamGenerator2D(x_plant, y_plant, shaper_type)
         self.stream = x_zaber_axis.device.streams.get_stream(stream_id)
 
-        self._max_speed_limit = -1.0
+        self._x_max_speed_limit = -1.0
+        self._y_max_speed_limit = -1.0
 
         # Set the speed limit to the device's current maxspeed so it will never be exceeded
-        self.reset_max_speed_limit()
+        self.reset_max_speed_limits()
 
-    def get_max_speed_limit(self, unit: Units = Units.NATIVE) -> float:
+    def get_x_max_speed_limit(self, unit: Units = Units.NATIVE) -> float:
         """
         Get the current velocity limit for which shaped moves will not exceed.
 
@@ -93,26 +97,53 @@ class ShapedAxisStream2D:
         :return: The velocity limit.
         """
         return self._x_primary_axis.settings.convert_from_native_units(
-            "maxspeed", self._max_speed_limit, unit
+            "maxspeed", self._x_max_speed_limit, unit
         )
 
-    def set_max_speed_limit(self, value: float, unit: Units = Units.NATIVE) -> None:
+    def get_y_max_speed_limit(self, unit: Units = Units.NATIVE) -> float:
+        """
+        Get the current velocity limit for which shaped moves will not exceed.
+
+        :param unit: The value will be returned in these units.
+        :return: The velocity limit.
+        """
+        return self._y_primary_axis.settings.convert_from_native_units(
+            "maxspeed", self._y_max_speed_limit, unit
+        )
+
+    def set_x_max_speed_limit(self, value: float, unit: Units = Units.NATIVE) -> None:
         """
         Set the velocity limit for which shaped moves will not exceed.
 
         :param value: The velocity limit.
         :param unit: The units of the velocity limit value.
         """
-        self._max_speed_limit = self._x_primary_axis.settings.convert_to_native_units(
+        self._x_max_speed_limit = self._x_primary_axis.settings.convert_to_native_units(
             "maxspeed", value, unit
         )
 
-    def reset_max_speed_limit(self) -> None:
+    def set_y_max_speed_limit(self, value: float, unit: Units = Units.NATIVE) -> None:
+        """
+        Set the velocity limit for which shaped moves will not exceed.
+
+        :param value: The velocity limit.
+        :param unit: The units of the velocity limit value.
+        """
+        self._y_max_speed_limit = self._y_primary_axis.settings.convert_to_native_units(
+            "maxspeed", value, unit
+        )
+
+    def reset_max_speed_limits(self) -> None:
         """Reset the velocity limit for shaped moves to the device's existing maxspeed setting."""
         if isinstance(self.x_axis, Lockstep):
-            self.set_max_speed_limit(min(self.get_setting_from_x_lockstep_axes("maxspeed")))
+            self.set_x_max_speed_limit(min(self.get_setting_from_x_lockstep_axes("maxspeed")))
         else:
-            self.set_max_speed_limit(self.x_axis.settings.get("maxspeed"))
+            self.set_x_max_speed_limit(self.x_axis.settings.get("maxspeed"))
+
+        if isinstance(self.y_axis, Lockstep):
+            self.set_y_max_speed_limit(min(self.get_setting_from_y_lockstep_axes("maxspeed")))
+        else:
+            self.set_y_max_speed_limit(self.y_axis.settings.get("maxspeed"))
 
     def is_homed(self) -> bool:
         """Check if all axes in lockstep group are homed."""
@@ -129,7 +160,7 @@ class ShapedAxisStream2D:
                 if not axis.is_homed():
                     return False
         else:
-            if not self.x_axis.is_homed():
+            if not self.y_axis.is_homed():
                 return False
 
         return True
@@ -207,6 +238,10 @@ class ShapedAxisStream2D:
         :param acceleration: The acceleration for the move.
         :param acceleration_unit: The units for the acceleration value.
         """
+        if (x_position == 0.0) & (y_position == 0.0):
+            # Travel distance is 0. No movement.
+            return
+
         # Convert all to values to the same units
         x_position_native = self._x_primary_axis.settings.convert_to_native_units(
             "pos", x_position, unit)
@@ -259,8 +294,25 @@ class ShapedAxisStream2D:
             "accel", y_decel_native, Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED
         )
 
-        accel_mm = min(x_accel_mm, y_accel_mm)
-        decel_mm = min(x_decel_native, y_decel_mm)
+        x_maxspeed_mm = self.get_x_max_speed_limit(Units.VELOCITY_MILLIMETRES_PER_SECOND)
+        y_maxspeed_mm = self.get_y_max_speed_limit(Units.VELOCITY_MILLIMETRES_PER_SECOND)
+
+        # Calculate accel and max speed along trajectory direction
+        distance = math.sqrt(x_position ** 2 + y_position ** 2)
+        x_ratio = abs(x_position) / distance  # cos(theta)
+        y_ratio = abs(y_position) / distance  # sin(theta)
+        if x_ratio == 0:
+            accel_mm = y_accel_mm / y_ratio
+            decel_mm = y_decel_mm / y_ratio
+            maxspeed_mm = y_maxspeed_mm / y_ratio
+        elif y_ratio == 0:
+            accel_mm = x_accel_mm / x_ratio
+            decel_mm = x_decel_mm / x_ratio
+            maxspeed_mm = x_maxspeed_mm / x_ratio
+        else:
+            accel_mm = min(x_accel_mm / x_ratio, y_accel_mm / y_ratio)
+            decel_mm = min(x_decel_mm / x_ratio, y_decel_mm / y_ratio)
+            maxspeed_mm = min(x_maxspeed_mm / x_ratio, y_maxspeed_mm / y_ratio)
 
         x_start_position = self.x_axis.get_position(Units.LENGTH_MILLIMETRES)
         y_start_position = self.y_axis.get_position(Units.LENGTH_MILLIMETRES)
@@ -270,7 +322,7 @@ class ShapedAxisStream2D:
             y_position_mm,
             accel_mm,
             decel_mm,
-            self.get_max_speed_limit(Units.VELOCITY_MILLIMETRES_PER_SECOND),
+            maxspeed_mm,
         )
 
         self.stream.disable()
@@ -287,6 +339,11 @@ class ShapedAxisStream2D:
             y_axis_definition = StreamAxisDefinition(self.y_axis.axis_number,
                                                      StreamAxisType.PHYSICAL)
         self.stream.setup_live_composite(x_axis_definition, y_axis_definition)
+
+        # Set centripetal acceleration to 0 so that it doesn't alter the trajectory
+        self.stream.set_max_centripetal_acceleration(
+            0, Units.NATIVE
+        )
 
         for segment in stream_segments:
             # Set acceleration making sure it is greater than zero by comparing 1 native accel unit
@@ -355,86 +412,87 @@ class ShapedAxisStream2D:
             acceleration_unit
         )
 
-    def move_max(
-        self,
-        wait_until_idle: bool = True,
-        acceleration: float = 0,
-        acceleration_unit: Units = Units.NATIVE,
-    ) -> None:
-        """
-        Input-shaped move to the max limit for the target resonant frequency and damping ratio.
 
-        :param wait_until_idle: If true the command will hang until the device reaches idle state.
-        :param acceleration: The acceleration for the move.
-        :param acceleration_unit: The units for the acceleration value.
-        """
-        if isinstance(self.x_axis, Lockstep):
-            x_current_axis_positions = self.get_lockstep_x_axes_positions(Units.NATIVE)
-            x_end_positions = self.get_setting_from_x_lockstep_axes("limit.max", Units.NATIVE)
-            # Move will be positive so find min relative move
-            x_largest_possible_move = np.min(np.subtract(x_end_positions, x_current_axis_positions))
+# Example code for using the class.
+if __name__ == "__main__":
+    COM_PORT = "COM5"  # The COM port with the connected Zaber device.
+    DEVICE_INDEX = 0  # The Zaber device index to test.
+    X_AXIS_INDEX = 1  # The x-axis index to test.
+    Y_AXIS_INDEX = 3  # The y-axis index to test.
+    X_RESONANT_FREQUENCY = 6  # Input shaping resonant frequency in Hz.
+    X_DAMPING_RATIO = 0.1  # Input shaping damping ratio.
+    Y_RESONANT_FREQUENCY = 2.5  # Input shaping resonant frequency in Hz.
+    Y_DAMPING_RATIO = 0.1  # Input shaping damping ratio.
+    X_MOVE_DISTANCE = 200  # The move distance in mm to use in relative moves.
+    Y_MOVE_DISTANCE = 100  # The move distance in mm to use in relative moves.
+    PAUSE_TIME = 1  # Amount of time in seconds to pause between moves.
+    STREAM_SHAPER_TYPE = ShaperType.ZV  # Input shaper type to use for ShapedAxisStream.
+    LIMITED_MOVE_SPEED = 200  # Speed limit in mm/s to use in demo of moves with speed limit
+
+    with Connection.open_serial_port(COM_PORT) as connection:
+        # Get all the devices on the connection
+        device_list = connection.detect_devices()
+        print(f"Found {len(device_list)} devices.")
+
+        if len(device_list) < 1:
+            print("No devices, exiting.")
+            sys.exit(0)
+
+        device = device_list[0]  # Get the first device on the port
+
+        # Check if axis is part of lockstep group
+        X_LOCKSTEP_INDEX = 0
+        Y_LOCKSTEP_INDEX = 0
+        try:
+            num_lockstep_groups_possible = device.settings.get("lockstep.numgroups")
+            for group_num in range(1, int(num_lockstep_groups_possible) + 1):
+                try:
+                    axis_nums = device.get_lockstep(group_num).get_axis_numbers()
+                    if X_AXIS_INDEX in axis_nums:
+                        print(f"Axis {X_AXIS_INDEX} is part of Lockstep group {group_num}.")
+                        X_LOCKSTEP_INDEX = group_num
+                    if Y_AXIS_INDEX in axis_nums:
+                        print(f"Axis {Y_AXIS_INDEX} is part of Lockstep group {group_num}.")
+                        Y_LOCKSTEP_INDEX = group_num
+                except LockstepNotEnabledException:
+                    pass
+        except CommandFailedException:
+            # Unable to get lockstep.numgroups settings meaning device is not capable of lockstep.
+            pass
+
+        x_zaber_object: Axis | Lockstep
+        if X_LOCKSTEP_INDEX == 0:
+            x_zaber_object = device.get_axis(X_AXIS_INDEX)
         else:
-            x_current_position = self.x_axis.get_position(Units.NATIVE)
-            x_end_position = self.x_axis.settings.get("limit.max", Units.NATIVE)
-            x_largest_possible_move = x_end_position - x_current_position
+            x_zaber_object = device.get_lockstep(X_LOCKSTEP_INDEX)
 
-        if isinstance(self.y_axis, Lockstep):
-            y_current_axis_positions = self.get_lockstep_y_axes_positions(Units.NATIVE)
-            y_end_positions = self.get_setting_from_y_lockstep_axes("limit.max", Units.NATIVE)
-            # Move will be positive so find min relative move
-            y_largest_possible_move = np.min(np.subtract(y_end_positions, y_current_axis_positions))
+        y_zaber_object: Axis | Lockstep
+        if Y_LOCKSTEP_INDEX == 0:
+            y_zaber_object = device.get_axis(Y_AXIS_INDEX)
         else:
-            y_current_position = self.y_axis.get_position(Units.NATIVE)
-            y_end_position = self.y_axis.settings.get("limit.max", Units.NATIVE)
-            y_largest_possible_move = y_end_position - y_current_position
+            y_zaber_object = device.get_lockstep(Y_LOCKSTEP_INDEX)
 
-        self.move_relative(
-            x_largest_possible_move,
-            y_largest_possible_move,
-            Units.NATIVE,
-            wait_until_idle,
-            acceleration,
-            acceleration_unit
-        )
+        # Initialize a Plant class with the frequency and damping ratio
+        x_plant_var = Plant(X_RESONANT_FREQUENCY, X_DAMPING_RATIO)
+        y_plant_var = Plant(Y_RESONANT_FREQUENCY, Y_DAMPING_RATIO)
 
-    def move_min(
-        self,
-        wait_until_idle: bool = True,
-        acceleration: float = 0,
-        acceleration_unit: Units = Units.NATIVE,
-    ) -> None:
-        """
-        Input-shaped move to the min limit for the target resonant frequency and damping ratio.
+        shaped_axis = ShapedAxisStream2D(
+            x_zaber_object, y_zaber_object, x_plant_var, y_plant_var, STREAM_SHAPER_TYPE)
 
-        :param wait_until_idle: If true the command will hang until the device reaches idle state.
-        :param acceleration: The acceleration for the move.
-        :param acceleration_unit: The units for the acceleration value.
-        """
-        if isinstance(self.x_axis, Lockstep):
-            x_current_axis_positions = self.get_lockstep_x_axes_positions(Units.NATIVE)
-            x_end_positions = self.get_setting_from_x_lockstep_axes("limit.min", Units.NATIVE)
-            # Move will be negative so find max relative move
-            x_largest_possible_move = np.max(np.subtract(x_end_positions, x_current_axis_positions))
-        else:
-            x_current_position = self.x_axis.get_position(Units.NATIVE)
-            x_end_position = self.x_axis.settings.get("limit.min", Units.NATIVE)
-            x_largest_possible_move = x_end_position - x_current_position
+        if not shaped_axis.is_homed():
+            raise Exception("Devices are not homed! Home devices before running script.")
 
-        if isinstance(self.y_axis, Lockstep):
-            y_current_axis_positions = self.get_lockstep_y_axes_positions(Units.NATIVE)
-            y_end_positions = self.get_setting_from_y_lockstep_axes("limit.min", Units.NATIVE)
-            # Move will be negative so find max relative move
-            y_largest_possible_move = np.max(np.subtract(y_end_positions, y_current_axis_positions))
-        else:
-            y_current_position = self.y_axis.get_position(Units.NATIVE)
-            y_end_position = self.y_axis.settings.get("limit.min", Units.NATIVE)
-            y_largest_possible_move = y_end_position - y_current_position
+        print("Performing shaped moves.")
+        shaped_axis.move_relative(X_MOVE_DISTANCE, Y_MOVE_DISTANCE, Units.LENGTH_MILLIMETRES, True)
+        time.sleep(PAUSE_TIME)
+        shaped_axis.move_relative(-X_MOVE_DISTANCE, -Y_MOVE_DISTANCE, Units.LENGTH_MILLIMETRES, True)
+        time.sleep(PAUSE_TIME)
 
-        self.move_relative(
-            x_largest_possible_move,
-            y_largest_possible_move,
-            Units.NATIVE,
-            wait_until_idle,
-            acceleration,
-            acceleration_unit
-        )
+        print("Performing shaped moves with speed limit.")
+        shaped_axis.set_x_max_speed_limit(LIMITED_MOVE_SPEED, Units.VELOCITY_MILLIMETRES_PER_SECOND)
+        shaped_axis.set_y_max_speed_limit(LIMITED_MOVE_SPEED, Units.VELOCITY_MILLIMETRES_PER_SECOND)
+        shaped_axis.move_relative(X_MOVE_DISTANCE, Y_MOVE_DISTANCE, Units.LENGTH_MILLIMETRES, True)
+        time.sleep(PAUSE_TIME)
+        shaped_axis.move_relative(-X_MOVE_DISTANCE, -Y_MOVE_DISTANCE, Units.LENGTH_MILLIMETRES, True)
+        time.sleep(PAUSE_TIME)
+        shaped_axis.reset_max_speed_limits()
