@@ -265,6 +265,9 @@ class ZeroVibrationStreamGenerator:
         :param max_speed_limit: An optional limit to place on maximum trajectory speed in the
         output motion.
         """
+        if distance == 0:
+            return []
+
         # Get time and magnitude of the impulses used for shaping
         impulses = self.get_impulse_amplitudes()
         impulse_times = self.get_impulse_times()
