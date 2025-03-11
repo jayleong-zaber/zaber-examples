@@ -9,7 +9,6 @@ Run the file directly to test the class out with a Zaber Device.
 import sys
 import time
 import math
-import numpy as np
 from zaber_motion import Units, Measurement, CommandFailedException, LockstepNotEnabledException
 from zaber_motion.ascii import Axis, Lockstep, StreamAxisDefinition, StreamAxisType, Connection
 from zero_vibration_stream_generator import ShaperType
@@ -340,10 +339,8 @@ class ShapedAxisStream2D:
                                                      StreamAxisType.PHYSICAL)
         self.stream.setup_live_composite(x_axis_definition, y_axis_definition)
 
-        # Set centripetal acceleration to 0 so that it doesn't alter the trajectory
-        self.stream.set_max_centripetal_acceleration(
-            0, Units.NATIVE
-        )
+        # Disable centripetal accel limit by setting to 0 so that it doesn't alter the trajectory
+        self.stream.set_max_centripetal_acceleration(0, Units.NATIVE)
 
         for segment in stream_segments:
             # Set acceleration making sure it is greater than zero by comparing 1 native accel unit
@@ -415,7 +412,7 @@ class ShapedAxisStream2D:
 
 # Example code for using the class.
 if __name__ == "__main__":
-    COM_PORT = "COM5"  # The COM port with the connected Zaber device.
+    COM_PORT = "COMX"  # The COM port with the connected Zaber device.
     DEVICE_INDEX = 0  # The Zaber device index to test.
     X_AXIS_INDEX = 1  # The x-axis index to test.
     Y_AXIS_INDEX = 3  # The y-axis index to test.
