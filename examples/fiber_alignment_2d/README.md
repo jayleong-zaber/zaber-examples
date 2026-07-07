@@ -81,7 +81,7 @@ The methods return a instance of `AlignmentResult` and some also return an insta
 
 Performs a raster scan of a square centered on the current position starting at one corner. This is useful for covering a large space if `zaber_axis_2` is faster than `zaber_axis_1` since the slow axis can remain stationary during each line scan.
 
-This method stops when the signal exceeds `first_light_threshold` by default. If it is necessary to complete the entire scan area to map the space or find a global maximum, set the `stop_at_threshold` parameter to `False` which will allow the scan to complete and then move to the position with the highest signal.
+This method stops when the signal exceeds `first_light_threshold` by default. If it is necessary to complete the entire scan area to map the space or find a global maximum, set the `stop_at_threshold` option to `False` which will allow the scan to complete and then move to the position with the highest signal.
 
 #### spiral_scan()
 
