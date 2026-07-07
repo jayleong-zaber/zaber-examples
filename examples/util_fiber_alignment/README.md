@@ -1,0 +1,113 @@
+# Fiber Alignment with Zaber Devices
+
+*By Jay Leong*
+
+## Hardware Requirements
+
+This code is designed to run on devices with [Zaber](https://www.zaber.com/) controllers.
+
+Notes:
+
+- [fiber_alignment_demo.py](fiber_alignment_demo.py) is written for two zaber axes controller by a single Zaber controller with the power meter signal connected to an analog input on the same controller. The code can be adapted for setups with multiple controllers but some methods may not be compatible.
+- The `streamed_spiral_scan` method in the `FiberAlignment2D` class is only compatible when the motion devices and power meter analog input are all connected to the same controller since it required synchronized motion and inputs.
+
+## Dependencies / Software Requirements / Prerequisites
+
+The script uses `uv` to manage virtual environment and dependencies:
+
+```bash
+pip install uv
+```
+
+The dependencies are listed in `pyproject.toml`.
+
+## Usage
+
+[fiber_alignment_2d.py](fiber_alignment_2d.py) is designed to be imported and reused in other programs rather than being run directly.
+[fiber_alignment_demo.py](fiber_alignment_demo.py) is provided to demonstrate the usage of the classes in `fiber_alignment_2d.py`.
+
+`fiber_alignment_2d.py` contains several methods for performing fiber alignment. The ideal choice will depend on the system and application it is being used for. Details on the purpose and benefits of each method are provided below in the [FiberAlignment2D Class](#fiberalignment2d-class) section.
+
+### Configuration / Parameters
+
+Edit the constants in [fiber_alignment_demo.py](fiber_alignment_demo.py) to fit your setup before running the script:
+
+- `SERIAL_PORT`: the serial port that your device is connected to.
+For more information on how to identify the serial port,
+see [Find the right serial port name](https://software.zaber.com/motion-library/docs/guides/communication/find_right_port).
+
+## Running the Script
+
+To run the example code:
+
+```bash
+uv sync
+uv run fiber_alignment_demo.py
+```
+
+## FiberAlignment2D Class
+
+Importing the class (Python):
+
+```python
+from fiber_alignment_2d import DeviceAnalogInput, FiberAlignment2D, AlignmentResult, AlignmentSamples
+```
+
+Initialization (Python):
+
+```python
+analog_input = DeviceAnalogInput(zaber_device, analog_input_number, gain, num_samples)
+fiber_alignment = FiberAlignment2D(zaber_axis_1, zaber_axis_2, analog_input)
+```
+
+- The `zaber_axis_1` and `zaber_axis_2` parameters are the [`Axis`](https://software.zaber.com/motion-library/api/py/ascii/axis) class instance that the `FiberAlignment2D` class will move to maximize analog input signla during alignment.
+- The `analog_input` parameter is an instance of the `DeviceAnalogInput` class which defines the analog input used for the power meter input.
+  - The `zaber_device` parameter is the [`Device`](https://software.zaber.com/motion-library/api/py/ascii/device) class instance that contains the analog input.
+  - The `analog_input_number` parameter specifies which analog input pin the power meter is connected to.
+  - The `gain` parameter is a gain factor for converting the analog input voltage to power units. This parameter is optinal and defaults to 1.
+  - The `num_samples` parameter specifies how many samples to take and average when calling the `get_signal` method to reduce noise. This parameter is optinal and defaults to 1.
+- See [the ZML getting started guide](https://software.zaber.com/motion-library/docs/tutorials/code) for a basic tutorial on how to initialize '`Device` and `Axis` classes.
+
+The methods to perform fiber alignment in this class fall in to two categories. [First Light Search Methods](#first-light-search-methods) are used when there is no reliable signal and searches the space for a signal that is strong enough to reliably use a hill climb routine. [Hill Climb Optimization Methods](#hill-climb-optimization-methods) perform final alignment by maximizing the signal strength with a hill climb routine.
+The methods return a instance of `AlignmentResult` and some also return an instance of `AlignmentSamples`. `AlignmentResult` contains the final position, final signal strength, and boolean indicating whether it was sucessful. `AlignmentSamples` contains lists of the positions and signals from the samples taken during the process.
+
+### First Light Search Methods
+
+`raster_scan()` and `spiral_scan()` methods takes steps and waits for the axes to stop and settle between measurements. 
+
+`streamed_spiral_scan()` performs continuous motion for higher speed scanning. This method does not return a instance of `AlignmentSamples` so cannot be used to map the signal.
+
+#### raster_scan()
+
+Performs a raster scan of a square centered on the current position starting at one corner. This is useful for covering a large space if `zaber_axis_2` is faster than `zaber_axis_1` since the slow axis can remain stationary during each line scan.
+
+This method stops when the signal exceeds `first_light_threshold` by default. If it is necessary to complete the entire scan area to map the space or find a global maximum, set the `stop_at_threshold` parameter to `False` which will allow the scan to complete and then move to the position with the highest signal.
+
+#### spiral_scan()
+
+This method is similar to `raster_scan()` but Performs a square spiral starting at the current position and spiralling outwards. This is typically more efficient than raster scan if the initial position is already roughly aligned.
+
+#### streamed_spiral_scan()
+
+This methods performs a constant velocity circular spiral motion starting at the current position using [streams](https://software.zaber.com/motion-library/api/py/ascii/device#streams) and uses [triggers](https://software.zaber.com/motion-library/api/py/ascii/device#triggers) to stop when a signal is detected. This method is faster than `spiral_scan` since it is continously moving and monitoring the signal at high freqeuncy but can be less reliable if the power meter response is not fast enough or there is noise. Reduce the speed and acceleration to improve reliabilty.
+
+The motion is stopped when `trigger_threshold` is exceeded. After coming to a stop, the stages move back to the trigger position, retakes a measurement, and compares it to `first_light_threshold` to ensure that the final signal is above the required threshold. The triggers can take up to a few milliseconds to record the position resulting in some error. `trigger_threshold` must be higher than `first_light_threshold` to account for this as well as other sources of error and noise.
+
+To change the max speed or acceleration used during streamed motion use the `set_stream_max_speed` and `set_stream_max_accel` methods in the instance of `FiberAlignment2D`.
+
+### Hill Climb Optimization Methods
+
+These methods optimize position to maximize the signal strength. Simple example of a pattern based search and gradient search are provided but more complex methods that may be faster are possible. These methods can also be extended to work with more axes simultaneously.
+
+#### pattern_search()
+
+This search algorithm takes a positive and negative step on each axis and moves to the position with the highest signal. When no improvement is found, it halves the step size and repeats until the step size is `min_step`.
+
+#### gradient_search()
+
+This search algorithm takes a step on each axis to calculate the gradient and takes a step in the direction of highest gradient. When no improvement is found, it halves the step size and repeats until the step size is `min_step`.
+
+This method is more complex but can be faster than the pattern search because it requires less measurements per step and can move diagonally.
+
+## Troubleshooting Tips or FAQ
+

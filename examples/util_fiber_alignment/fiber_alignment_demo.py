@@ -1,0 +1,105 @@
+"""Script to demostrate the use of FiberAlignment2D class.
+
+This sample code is for two Zaber peripherals controlled by an X-MCC controller.
+The optical power meter is connected to the same X-MCC through an analog input.
+"""
+
+from enum import Enum
+
+from zaber_motion import Units
+from zaber_motion.ascii import Connection
+
+from fiber_alignment_2d import DeviceAnalogInput, FiberAlignment2D
+
+
+class HillClimbType(Enum):
+    """Enum to specify type of hill climb to perform."""
+
+    PATTERN = "pattern"
+    GRADIENT = "gradient"
+
+
+SERIAL_PORT = "COM4"
+DEVICE_NUM = 1
+AXIS_1_NUM = 2
+AXIS_2_NUM = 3
+ANALOG_INPUT_NUMBER = 2
+POWER_CONVERSION = 500  # Conversion from voltage to power in (eg. uW/V or W/V).
+NUM_SAMPLES = 5  # Number of analog input samples to average per reading.
+
+FIRST_LIGHT_THRESHOLD = 10  # Minimum power required for hill climb algorithm to work.
+FIRST_LIGHT_TRIGGER_THRESHOLD = 20  # Power at which to stop scan when using streamed_spiral_scan.
+SEARCH_DISTANCE = 0.5  # Distance from starting point to search for first light in mm.
+STEP_SIZE = 0.005  # Step size or path spacing to use in first light search in mm.
+
+STREAM_VELOCITY = 2  # Speed at which to perform streamed movement for streamed_spiral_scan in mm/s.
+STREAM_ACCEL = 2  # Acceleration at which to perform streamed movement for streamed_spiral_scan in mm/s^2.
+
+HILL_CLIMB_METHOD = HillClimbType.GRADIENT
+MIN_STEP_SIZE = 0.0001  # Smallest step size to use in hill climb search in mm.
+
+
+def main():
+    print("Program start.")
+
+    with Connection.open_serial_port(SERIAL_PORT) as connection:
+        device_list = connection.detect_devices()
+        print(f"Found {len(device_list)} devices")
+        zaber_device = connection.get_device(DEVICE_NUM)
+
+        # Define analog input.
+        analog_input = DeviceAnalogInput(zaber_device, ANALOG_INPUT_NUMBER, POWER_CONVERSION, NUM_SAMPLES)
+
+        zaber_axis_1 = zaber_device.get_axis(AXIS_1_NUM)
+        zaber_axis_2 = zaber_device.get_axis(AXIS_2_NUM)
+
+        fiber_alignment = FiberAlignment2D(zaber_axis_1, zaber_axis_2, analog_input)
+
+        # Change speed and accel for streamed movement.
+        fiber_alignment.set_stream_max_speed(STREAM_VELOCITY, Units.VELOCITY_MILLIMETRES_PER_SECOND)
+        fiber_alignment.set_stream_max_accel(
+            STREAM_ACCEL,
+            Units.ACCELERATION_METRES_PER_SECOND_SQUARED,
+        )
+
+        print("Searching for first light...")
+        first_light_result = fiber_alignment.streamed_spiral_scan(
+            FIRST_LIGHT_THRESHOLD,
+            FIRST_LIGHT_TRIGGER_THRESHOLD,
+            SEARCH_DISTANCE,
+            STEP_SIZE,
+            Units.LENGTH_MILLIMETRES,
+        )
+
+        if not (first_light_result.success):
+            # If streamed scan fails, fall back to slower but more reliable step and measure search.
+            print("Streamed first light search failed. Trying step and measure search...")
+            first_light_result, first_light_samples = fiber_alignment.spiral_scan(
+                FIRST_LIGHT_THRESHOLD,
+                SEARCH_DISTANCE,
+                STEP_SIZE,
+                Units.LENGTH_MILLIMETRES,
+                stop_at_threshold=True,
+            )
+
+        if first_light_result.success:
+            print("Starting hill climb for fine-tuning...")
+            if HILL_CLIMB_METHOD == HillClimbType.GRADIENT:
+                hill_climb_result, hill_climb_samples = fiber_alignment.gradient_search(
+                    STEP_SIZE, MIN_STEP_SIZE, Units.LENGTH_MILLIMETRES
+                )
+            else:
+                # Default to pattern search.
+                hill_climb_result, hill_climb_samples = fiber_alignment.pattern_search(
+                    STEP_SIZE, MIN_STEP_SIZE, Units.LENGTH_MILLIMETRES
+                )
+
+            print("Alignment complete!")
+        else:
+            print("First light above specified threshold was not found.")
+
+    print("Program end.")
+
+
+if __name__ == "__main__":
+    main()
