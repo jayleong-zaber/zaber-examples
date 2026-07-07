@@ -60,15 +60,15 @@ analog_input = DeviceAnalogInput(zaber_device, analog_input_number, gain, num_sa
 fiber_alignment = FiberAlignment2D(zaber_axis_1, zaber_axis_2, analog_input)
 ```
 
-- The `zaber_axis_1` and `zaber_axis_2` parameters are the [`Axis`](https://software.zaber.com/motion-library/api/py/ascii/axis) class instance that the `FiberAlignment2D` class will move to maximize analog input signla during alignment.
+- The `zaber_axis_1` and `zaber_axis_2` parameters are the [`Axis`](https://software.zaber.com/motion-library/api/py/ascii/axis) class instances that the `FiberAlignment2D` class will move to maximize analog input signal during alignment.
 - The `analog_input` parameter is an instance of the `DeviceAnalogInput` class which defines the analog input used for the power meter input.
   - The `zaber_device` parameter is the [`Device`](https://software.zaber.com/motion-library/api/py/ascii/device) class instance that contains the analog input.
   - The `analog_input_number` parameter specifies which analog input pin the power meter is connected to.
   - The `gain` parameter is a gain factor for converting the analog input voltage to power units. This parameter is optinal and defaults to 1.
   - The `num_samples` parameter specifies how many samples to take and average when calling the `get_signal` method to reduce noise. This parameter is optinal and defaults to 1.
-- See [the ZML getting started guide](https://software.zaber.com/motion-library/docs/tutorials/code) for a basic tutorial on how to initialize '`Device` and `Axis` classes.
+- See [the ZML getting started guide](https://software.zaber.com/motion-library/docs/tutorials/code) for a basic tutorial on how to initialize `Device` and `Axis` classes.
 
-The methods to perform fiber alignment in this class fall in to two categories. [First Light Search Methods](#first-light-search-methods) are used when there is no reliable signal and searches the space for a signal that is strong enough to reliably use a hill climb routine. [Hill Climb Optimization Methods](#hill-climb-optimization-methods) perform final alignment by maximizing the signal strength with a hill climb routine.
+The methods to perform fiber alignment in this class fall in to two categories. [First Light Search Methods](#first-light-search-methods) are used when there is no reliable signal and searches the space for a signal that is strong enough to reliably use a hill climb method. [Hill Climb Optimization Methods](#hill-climb-optimization-methods) perform final alignment by maximizing the signal strength with a hill climb routine.
 The methods return a instance of `AlignmentResult` and some also return an instance of `AlignmentSamples`. `AlignmentResult` contains the final position, final signal strength, and boolean indicating whether it was sucessful. `AlignmentSamples` contains lists of the positions and signals from the samples taken during the process.
 
 ### First Light Search Methods
@@ -109,5 +109,5 @@ This search algorithm takes a step on each axis to calculate the gradient and ta
 
 This method is more complex but can be faster than the pattern search because it requires less measurements per step and can move diagonally.
 
-## Troubleshooting Tips or FAQ
+## Troubleshooting Tips
 
