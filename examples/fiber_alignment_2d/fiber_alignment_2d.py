@@ -191,7 +191,7 @@ class FiberAlignment2D:
         position_unit: Units = Units.NATIVE,
     ) -> float:
         """Perform absolute move and take signal measurement."""
-        self.move_absolute(position_1, position_2, position_unit, wait_until_idle=True)
+        self.move_absolute(position_1, position_2, position_unit)
         return self.signal_input.get_signal()
 
     def _print_sample(

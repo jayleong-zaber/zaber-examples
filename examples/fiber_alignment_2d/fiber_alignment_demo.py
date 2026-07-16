@@ -4,8 +4,6 @@ This sample code is for two Zaber peripherals controlled by an X-MCC controller.
 The optical power meter is connected to the same X-MCC through an analog input.
 """
 
-from enum import Enum
-
 from zaber_motion import Units
 from zaber_motion.ascii import Connection
 
