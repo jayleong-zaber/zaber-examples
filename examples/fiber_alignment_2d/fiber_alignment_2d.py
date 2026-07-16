@@ -498,8 +498,8 @@ class FiberAlignment2D:
                 Measurement(center_position[1], Units.NATIVE),
             )
 
-            stream.uncork()
-            stream.wait_until_idle()
+        stream.uncork()
+        stream.wait_until_idle()
 
     def _create_streamed_scan_triggers(
         self,
