@@ -126,9 +126,10 @@ class FiberAlignment2D:
         self.signal_input = signal_input
 
         # Initialize settings for streamed movement.
-        # Initialize with maxspeed and accel to 0 to use default settings.
-        self.stream_max_speed = 0
-        self.stream_max_accel = 0
+        # Initialize stream max speed and accel to 0 to use default settings.
+        self._stream_max_speed = 0
+        self._stream_max_accel = 0
+
         # Determine which setting to use for current stage position when searching for first light
         # with streamed motion and triggers.
         # Use to "encoder.pos" if both axes have encoders and "pos" otherwise.
@@ -139,13 +140,12 @@ class FiberAlignment2D:
 
     def set_stream_max_speed(self, max_speed: float, speed_unit: Units = Units.NATIVE) -> None:
         """Set max tangential movement speed used in streams."""
-        self.stream_max_speed = self.zaber_axis_1.settings.convert_to_native_units("maxspeed", max_speed, speed_unit)
+        self._stream_max_speed = self.zaber_axis_1.settings.convert_to_native_units("maxspeed", max_speed, speed_unit)
 
     def set_stream_max_accel(self, max_accel: float, accel_unit: Units = Units.NATIVE) -> None:
         """Set max tangential and centripetal acceleration used in streams."""
         accel = self.zaber_axis_1.settings.convert_to_native_units("accel", max_accel, accel_unit)
-        self._max_accel = accel
-        self._accel_unit = accel
+        self._stream_max_accel = accel
 
     def _check_encoder(self, zaber_axis: Axis) -> bool:
         """Check if axis has an encoder using encoder.mode.
@@ -443,11 +443,11 @@ class FiberAlignment2D:
 
     def _set_stream_settings(self, stream: Stream) -> None:
         """Set speeds and accelerations in stream."""
-        if self.stream_max_speed > 0:
-            stream.set_max_speed(self.stream_max_speed, Units.NATIVE)
-        if self.stream_max_accel > 0:
-            stream.set_max_centripetal_acceleration(self.stream_max_accel, Units.NATIVE)
-            stream.set_max_tangential_acceleration(self.stream_max_accel, Units.NATIVE)
+        if self._stream_max_speed > 0:
+            stream.set_max_speed(self._stream_max_speed)
+        if self._stream_max_accel > 0:
+            stream.set_max_centripetal_acceleration(self._stream_max_accel)
+            stream.set_max_tangential_acceleration(self._stream_max_accel)
 
     def _streamed_spiral(
         self,
