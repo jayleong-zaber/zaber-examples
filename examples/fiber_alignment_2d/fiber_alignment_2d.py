@@ -580,8 +580,8 @@ class FiberAlignment2D:
 
         :param start_step: Starting step siz.
         :param min_step: Minimum step size.
-        :param unit: Units for `start_step` and `min_step`
-        :param max_iterations: Maximum number of of iterations before stopping.
+        :param length_unit: Units for `start_step` and `min_step`
+        :param max_iterations: Maximum number of iterations before stopping.
         """
         samples = AlignmentSamples()
 
@@ -592,10 +592,9 @@ class FiberAlignment2D:
         c2 = self.zaber_axis_2.get_position(length_unit)
         current_signal = self.signal_input.get_signal()
 
+        print(f"Pattern Search: Step Size = {current_step:.6f}")
         for i in range(max_iterations):
             samples.add_sample(c1, c2, current_signal)
-
-            print(f"Pattern Search: Step Size = {current_step:.6f}")
 
             improved = False
 
@@ -628,6 +627,7 @@ class FiberAlignment2D:
                 if current_step <= min_step:
                     break
                 current_step = max(min_step, current_step / 2.0)
+                print(f"Pattern Search: Step Size = {current_step:.6f}")
 
             if i == max_iterations - 1:
                 print("Maximum number of iterations reached.")
@@ -655,8 +655,8 @@ class FiberAlignment2D:
 
         :param start_step: Starting step size.
         :param min_step: Minimum step size.
-        :param unit: Units for `start_step` and `min_step`
-        :param max_iterations: Maximum number of of iterations before stopping.
+        :param length_unit: Units for `start_step` and `min_step`
+        :param max_iterations: Maximum number of iterations before stopping.
         """
         samples = AlignmentSamples()
 
