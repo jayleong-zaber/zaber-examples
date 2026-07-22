@@ -34,9 +34,8 @@ STREAM_ACCEL = 2  # Acceleration at which to perform streamed movement for strea
 # ------------------- Script Settings ----------------------
 
 
-def main():
-    print("Program start.")
-
+def main() -> None:
+    """Run fiber alignment demo with Zaber stages."""
     with Connection.open_serial_port(SERIAL_PORT) as connection:
         device_list = connection.detect_devices()
         print(f"Found {len(device_list)} devices")
@@ -69,7 +68,7 @@ def main():
         if not (first_light_result.success):
             # If streamed scan fails, fall back to slower but more reliable step and measure search.
             print("Streamed first light search failed. Trying step and measure search...")
-            first_light_result, first_light_samples = fiber_alignment.spiral_scan(
+            first_light_result, _ = fiber_alignment.spiral_scan(
                 FIRST_LIGHT_THRESHOLD,
                 SEARCH_DISTANCE,
                 STEP_SIZE,
@@ -80,16 +79,16 @@ def main():
         if first_light_result.success:
             print("Starting hill climb optimization for fine-tuning...")
             # Using pattern_search(). gradient_search() is an alternative.
-            hill_climb_result, hill_climb_samples = fiber_alignment.pattern_search(
-                STEP_SIZE, MIN_STEP_SIZE, Units.LENGTH_MILLIMETRES
-            )
+            hill_climb_result, _ = fiber_alignment.pattern_search(STEP_SIZE, MIN_STEP_SIZE, Units.LENGTH_MILLIMETRES)
 
             print("Alignment complete!")
+            print(f"  Final Position: [{hill_climb_result.position_1:.5f}, {hill_climb_result.position_2:.5f}]")
+            print(f"  Final Signal: {hill_climb_result.signal:.4f}")
         else:
             print("First light above specified threshold was not found.")
 
-    print("Program end.")
-
 
 if __name__ == "__main__":
+    print("Program start.")
     main()
+    print("Program end.")

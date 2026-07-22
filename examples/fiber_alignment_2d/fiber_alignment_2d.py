@@ -147,6 +147,14 @@ class FiberAlignment2D:
         accel = self.zaber_axis_1.settings.convert_to_native_units("accel", max_accel, accel_unit)
         self._stream_max_accel = accel
 
+    def get_stream_max_speed(self, speed_unit: Units = Units.NATIVE) -> float:
+        """Set max tangential movement speed used in streams."""
+        return self.zaber_axis_1.settings.convert_to_native_units("maxspeed", self._stream_max_speed, speed_unit)
+
+    def get_stream_max_accel(self, accel_unit: Units = Units.NATIVE) -> float:
+        """Set max tangential and centripetal acceleration used in streams."""
+        return self.zaber_axis_1.settings.convert_to_native_units("accel", self._stream_max_accel, accel_unit)
+
     def _check_encoder(self, zaber_axis: Axis) -> bool:
         """Check if axis has an encoder using encoder.mode.
 
@@ -375,8 +383,8 @@ class FiberAlignment2D:
         else:
             raise MultipleDevicesError
 
-        start_pos_1 = self.zaber_axis_1.get_position(Units.NATIVE)
-        start_pos_2 = self.zaber_axis_2.get_position(Units.NATIVE)
+        start_pos_1 = self.zaber_axis_1.get_position()
+        start_pos_2 = self.zaber_axis_2.get_position()
         current_signal = self.signal_input.get_signal()
 
         center_position = [start_pos_1, start_pos_2]
@@ -399,7 +407,7 @@ class FiberAlignment2D:
                 )
 
                 print("Stream complete. Returning to starting position...")
-                self.move_absolute(start_pos_1, start_pos_2, Units.NATIVE)
+                self.move_absolute(start_pos_1, start_pos_2)
             except StreamMovementInterruptedException:
                 print("Stream interrupted.")
 
@@ -414,7 +422,6 @@ class FiberAlignment2D:
                 self.move_absolute(
                     zaber_device.settings.get("user.data.0"),
                     zaber_device.settings.get("user.data.1"),
-                    Units.NATIVE,
                 )
 
                 # Delete saved positions
@@ -516,8 +523,8 @@ class FiberAlignment2D:
         :param trigger_threshold: Signal threshold at which to fire triggers.
         """
         # Clear user data that will be used to store positions
-        zaber_device.settings.set("user.data.0", 0, Units.NATIVE)
-        zaber_device.settings.set("user.data.1", 0, Units.NATIVE)
+        zaber_device.settings.set("user.data.0", 0)
+        zaber_device.settings.set("user.data.1", 0)
 
         trigger_voltage = trigger_threshold / self.signal_input.gain
 
