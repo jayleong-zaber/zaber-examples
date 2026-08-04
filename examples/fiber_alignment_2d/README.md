@@ -1,4 +1,4 @@
-# Fiber Alignment with Zaber Devices
+# Automated Fiber Alignment Routines
 
 *By Jay Leong*
 
